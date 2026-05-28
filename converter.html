@@ -1,0 +1,1417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Halftone — Video Shader Converter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg:    #000000;
+      --surf:  #0a0a0a;
+      --surf2: #111111;
+      --surf3: #161616;
+      --bd:    rgba(255,255,255,0.07);
+      --bd2:   rgba(255,255,255,0.12);
+      --tx:    #ededed;
+      --mu:    #666666;
+      --mu2:   #444444;
+      --red:   #ef4444;
+      --green: #22c55e;
+      --pw:    264px;
+    }
+
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--tx);
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── HEADER ── */
+    header {
+      height: 48px;
+      border-bottom: 1px solid var(--bd);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      flex-shrink: 0;
+      background: rgba(0,0,0,0.9);
+      backdrop-filter: blur(16px);
+      z-index: 100;
+    }
+
+    .logo {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      color: var(--tx);
+      text-transform: uppercase;
+    }
+
+    .hdr-center {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .hdr-chip {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border: 1px solid var(--bd);
+      border-radius: 9999px;
+      font-size: 11px;
+      color: var(--mu);
+    }
+    .hdr-chip span { color: var(--tx); font-weight: 500; }
+
+    .hdr-btns { display: flex; gap: 6px; align-items: center; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 12px;
+      border: 1px solid var(--bd2);
+      border-radius: 7px;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      background: transparent;
+      color: var(--tx);
+    }
+    .btn:hover { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.2); }
+
+    .btn-primary {
+      background: var(--tx);
+      color: #000;
+      border-color: transparent;
+      font-weight: 600;
+    }
+    .btn-primary:hover { opacity: 0.86; }
+
+    .btn-icon { padding: 6px 8px; }
+
+    .btn-export-video {
+      background: var(--tx);
+      color: #000;
+      border-color: transparent;
+      font-weight: 600;
+    }
+    .btn-export-video:hover { opacity: 0.86; }
+    .btn-export-video:disabled {
+      opacity: 0.2;
+      cursor: not-allowed;
+      background: transparent;
+      color: var(--mu);
+      border-color: var(--bd2);
+    }
+    .btn-export-video.exporting {
+      background: transparent;
+      color: var(--red);
+      border-color: rgba(239,68,68,0.4);
+    }
+    .btn-export-video.exporting:hover { background: rgba(239,68,68,0.08); }
+
+    /* ── LAYOUT ── */
+    .workspace { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      width: var(--pw);
+      flex-shrink: 0;
+      background: var(--surf);
+      border-right: 1px solid var(--bd);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sidebar-scroll {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 8px;
+    }
+    .sidebar-scroll::-webkit-scrollbar { width: 3px; }
+    .sidebar-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+
+    /* ── SECTIONS ── */
+    .sec { margin-bottom: 2px; border-radius: 8px; overflow: hidden; border: 1px solid var(--bd); }
+
+    .sec-hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 11px;
+      background: var(--surf2);
+      cursor: pointer;
+      user-select: none;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--mu);
+      transition: color 0.15s;
+    }
+    .sec-hdr:hover { color: var(--tx); }
+    .sec-arr { transition: transform 0.2s; font-size: 9px; opacity: 0.3; }
+    .sec.open .sec-arr { transform: rotate(180deg); opacity: 0.6; }
+    .sec-body { padding: 10px 10px 12px; display: none; flex-direction: column; gap: 9px; background: var(--surf); }
+    .sec.open .sec-body { display: flex; }
+
+    /* ── SOURCE ── */
+    .src-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    .src-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 5px;
+      padding: 10px 6px; background: var(--surf2); border: 1px solid var(--bd);
+      border-radius: 7px; cursor: pointer; font-size: 11px; color: var(--mu);
+      transition: all 0.15s; font-family: inherit;
+    }
+    .src-btn:hover, .src-btn.active { border-color: rgba(255,255,255,0.3); color: var(--tx); background: rgba(255,255,255,0.05); }
+
+    .v-status {
+      padding: 7px 10px; background: var(--surf2); border: 1px solid var(--bd);
+      border-radius: 6px; font-size: 11px; color: var(--mu);
+      display: flex; align-items: center; gap: 7px; overflow: hidden;
+    }
+    .v-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--mu2); flex-shrink: 0; }
+    .v-dot.live   { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .v-dot.loaded { background: #fff; }
+    .v-status-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── CONTROLS ── */
+    .ctrl { display: flex; flex-direction: column; gap: 5px; }
+    .ctrl-row { display: flex; justify-content: space-between; align-items: center; }
+    .ctrl-lbl { font-size: 11px; color: var(--mu); letter-spacing: -0.01em; }
+    .ctrl-val { font-size: 11px; font-weight: 500; color: var(--tx); min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
+
+    input[type=range] {
+      -webkit-appearance: none; width: 100%; height: 2px;
+      background: rgba(255,255,255,0.1); border-radius: 2px; cursor: pointer; outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
+      background: #fff; cursor: pointer; box-shadow: 0 0 0 3px rgba(255,255,255,0.1);
+      transition: box-shadow 0.15s;
+    }
+    input[type=range]::-webkit-slider-thumb:hover { box-shadow: 0 0 0 5px rgba(255,255,255,0.15); }
+
+    /* ── SHAPES ── */
+    .shape-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+    .shape-btn {
+      aspect-ratio: 1; background: var(--surf2); border: 1px solid var(--bd);
+      border-radius: 6px; cursor: pointer; transition: all 0.15s;
+      display: flex; align-items: center; justify-content: center; color: var(--mu);
+    }
+    .shape-btn:hover, .shape-btn.active { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.07); color: var(--tx); }
+
+    /* ── TOGGLE ── */
+    .tog-row { display: flex; align-items: center; justify-content: space-between; }
+    .tog-lbl { font-size: 11px; color: var(--mu); }
+    .tog {
+      width: 30px; height: 16px; background: var(--surf2); border: 1px solid var(--bd2);
+      border-radius: 9999px; cursor: pointer; transition: background 0.2s, border-color 0.2s;
+      position: relative; flex-shrink: 0;
+    }
+    .tog.on { background: rgba(255,255,255,0.25); border-color: rgba(255,255,255,0.4); }
+    .tog-thumb {
+      position: absolute; top: 2px; left: 2px; width: 10px; height: 10px;
+      border-radius: 50%; background: var(--mu); transition: left 0.2s, background 0.2s;
+    }
+    .tog.on .tog-thumb { left: 16px; background: white; }
+
+    /* ── COLORS ── */
+    .color-row { display: flex; gap: 6px; }
+    .color-item { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+    .color-lbl { font-size: 10px; color: var(--mu); text-transform: uppercase; letter-spacing: 0.06em; }
+    .color-wrap { position: relative; height: 30px; border-radius: 6px; overflow: hidden; border: 1px solid var(--bd2); cursor: pointer; }
+    .color-wrap input[type=color] { position: absolute; inset: -4px; width: calc(100% + 8px); height: calc(100% + 8px); opacity: 0; cursor: pointer; }
+    .color-prev { position: absolute; inset: 0; border-radius: 6px; pointer-events: none; }
+
+    /* ── PRESETS ── */
+    .preset-grid { display: flex; flex-direction: column; gap: 4px; }
+    .preset-btn {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 10px; background: var(--surf2); border: 1px solid var(--bd);
+      border-radius: 6px; cursor: pointer; font-size: 11.5px; color: var(--mu);
+      transition: all 0.15s; font-family: inherit; text-align: left;
+    }
+    .preset-btn:hover { border-color: var(--bd2); color: var(--tx); }
+    .preset-btn.active { border-color: rgba(255,255,255,0.3); color: var(--tx); background: rgba(255,255,255,0.05); }
+    .preset-right { display: flex; align-items: center; gap: 8px; }
+    .preset-key {
+      font-size: 10px; color: var(--mu2); background: var(--surf3);
+      border: 1px solid var(--bd); border-radius: 3px; padding: 1px 5px;
+    }
+    .preset-dot { width: 7px; height: 7px; border-radius: 50%; }
+
+    /* ── RANDOMIZE ── */
+    .rand-btn {
+      width: 100%; padding: 8px; background: var(--surf2); border: 1px solid var(--bd);
+      border-radius: 7px; font-family: inherit; font-size: 11.5px; font-weight: 500;
+      color: var(--mu); cursor: pointer; transition: all 0.15s;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .rand-btn:hover { border-color: var(--bd2); color: var(--tx); background: rgba(255,255,255,0.04); }
+
+    /* ── EXPORT ── */
+    .export-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    .export-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      padding: 9px 6px; background: var(--surf2); border: 1px solid var(--bd);
+      border-radius: 7px; cursor: pointer; font-size: 10.5px; color: var(--mu);
+      font-family: inherit; transition: all 0.15s;
+    }
+    .export-btn:hover { border-color: var(--bd2); color: var(--tx); }
+    .export-btn.recording { border-color: rgba(239,68,68,0.5); background: rgba(239,68,68,0.08); color: var(--red); }
+    .rec-dur { font-size: 10px; color: var(--red); display: none; }
+    .rec-dur.show { display: block; }
+
+    /* ── CANVAS ── */
+    .canvas-area {
+      flex: 1; position: relative; overflow: hidden; background: #000;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #glcanvas { display: block; width: 100%; height: 100%; }
+
+    /* ── UPLOAD OVERLAY ── */
+    .upload-overlay {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px;
+      background: rgba(0,0,0,0.75); z-index: 10; cursor: pointer;
+      transition: background 0.2s; backdrop-filter: blur(4px);
+    }
+    .upload-overlay.drag-over { background: rgba(255,255,255,0.04); }
+    .upload-overlay.hidden    { display: none; }
+    .up-ring {
+      width: 72px; height: 72px; border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 18px; display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.2s;
+    }
+    .upload-overlay.drag-over .up-ring { border-color: rgba(255,255,255,0.4); }
+    .up-title { font-size: 16px; font-weight: 600; color: rgba(255,255,255,0.8); letter-spacing: -0.01em; }
+    .up-sub   { font-size: 12.5px; color: var(--mu); text-align: center; max-width: 260px; line-height: 1.6; }
+    .up-btns  { display: flex; gap: 8px; }
+
+    /* ── DEMO HINT ── */
+    .demo-hint {
+      position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+      font-size: 10.5px; color: rgba(255,255,255,0.2); pointer-events: none;
+      letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap;
+    }
+
+    /* ── PLAYBACK ── */
+    .pb-bar {
+      position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 9px;
+      background: rgba(0,0,0,0.8); border: 1px solid var(--bd2); border-radius: 10px;
+      padding: 7px 12px; backdrop-filter: blur(16px); z-index: 20;
+    }
+    .pb-bar.hidden { display: none; }
+    .play-btn {
+      width: 26px; height: 26px; background: rgba(255,255,255,0.12);
+      border: 1px solid var(--bd2); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .play-btn:hover { background: rgba(255,255,255,0.2); }
+    .seek {
+      -webkit-appearance: none; width: 160px; height: 2px;
+      background: rgba(255,255,255,0.1); border-radius: 2px; cursor: pointer;
+    }
+    .seek::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 10px; border-radius: 50%; background: white; cursor: pointer; }
+    .time-txt { font-size: 10.5px; color: var(--mu); min-width: 70px; font-variant-numeric: tabular-nums; }
+
+    /* ── INFO ── */
+    .info-bar { position: absolute; bottom: 14px; right: 14px; display: flex; gap: 6px; pointer-events: none; }
+    .chip {
+      padding: 3px 9px; background: rgba(0,0,0,0.65); border: 1px solid var(--bd);
+      border-radius: 9999px; font-size: 10.5px; color: var(--mu); backdrop-filter: blur(8px);
+    }
+    .chip span { color: var(--tx); font-weight: 500; }
+
+    /* ── REC INDICATOR ── */
+    .rec-indicator {
+      position: absolute; top: 14px; right: 14px; display: none;
+      align-items: center; gap: 6px; padding: 5px 11px;
+      background: rgba(0,0,0,0.8); border: 1px solid rgba(239,68,68,0.4);
+      border-radius: 9999px; font-size: 11px; color: var(--red);
+      backdrop-filter: blur(12px); z-index: 30;
+    }
+    .rec-indicator.show { display: flex; }
+    .rec-blink { width: 6px; height: 6px; border-radius: 50%; background: var(--red); animation: blink 1s ease-in-out infinite; }
+    @keyframes blink { 0%,100%{opacity:1}50%{opacity:0.2} }
+
+    /* ── HIDDEN ── */
+    #videoEl   { display: none; }
+    #fileInput { display: none; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Halftone Studio</div>
+
+  <div class="hdr-center">
+    <div class="hdr-chip">FPS <span id="fpsTxt">--</span></div>
+    <div class="hdr-chip">DOTS <span id="dotsTxt">--</span></div>
+  </div>
+
+  <div class="hdr-btns">
+    <button class="btn" id="btnRand" title="Randomize (R)">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M1 3h2a3 3 0 013 3 3 3 0 003 3h2M8 1l3 2-3 2M8 7l3 2-3 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Randomize
+    </button>
+    <button class="btn btn-export-video" id="btnExportVideo" disabled title="Load a video first">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M1 2.5h7a1 1 0 011 1v5a1 1 0 01-1 1H1a1 1 0 01-1-1v-5a1 1 0 011-1zM9 5l3-2v6l-3-2" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+      </svg>
+      <span id="exportVideoTxt">Export Video</span>
+    </button>
+    <button class="btn" id="btnShot">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <rect x=".5" y=".5" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.1"/>
+        <circle cx="6" cy="6.5" r="2" stroke="currentColor" stroke-width="1.1"/>
+      </svg>
+      Export PNG
+    </button>
+    <button class="btn btn-icon" id="btnFS" title="Fullscreen">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M1 3.5V1h2.5M8.5 1H11v2.5M11 8.5V11H8.5M3.5 11H1V8.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<div class="workspace">
+
+  <aside class="sidebar">
+    <div class="sidebar-scroll">
+
+      <!-- Source -->
+      <div class="sec open" id="s-source">
+        <div class="sec-hdr" onclick="toggleSec('s-source')">Source <span class="sec-arr">&#9662;</span></div>
+        <div class="sec-body">
+          <div class="src-grid">
+            <button class="src-btn" id="btnUpload" onclick="document.getElementById('fileInput').click()">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 11v2a1 1 0 001 1h10a1 1 0 001-1v-2M8 9V2M5 5l3-3 3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Upload
+            </button>
+            <button class="src-btn" id="btnCam" onclick="startWebcam()">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.3"/><path d="M11 7l4-2v6l-4-2" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+              Webcam
+            </button>
+          </div>
+          <div class="v-status">
+            <div class="v-dot" id="vDot"></div>
+            <span class="v-status-txt" id="vTxt">No source — demo mode</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Halftone -->
+      <div class="sec open" id="s-ht">
+        <div class="sec-hdr" onclick="toggleSec('s-ht')">Halftone <span class="sec-arr">&#9662;</span></div>
+        <div class="sec-body">
+          <div class="ctrl">
+            <div class="ctrl-row"><span class="ctrl-lbl">Dot Spacing</span><span class="ctrl-val" id="v-sp">20</span></div>
+            <input type="range" id="r-sp" min="4" max="60" value="20" step="1" oninput="P('spacing',+this.value,'v-sp',this.value)">
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-row"><span class="ctrl-lbl">Dot Scale</span><span class="ctrl-val" id="v-sc">0.7</span></div>
+            <input type="range" id="r-sc" min="0.1" max="1.5" value="0.7" step="0.01" oninput="P('scale',+this.value,'v-sc',this.value)">
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-row"><span class="ctrl-lbl">Min Size</span><span class="ctrl-val" id="v-mn">0.04</span></div>
+            <input type="range" id="r-mn" min="0" max="0.4" value="0.04" step="0.01" oninput="P('dotMin',+this.value,'v-mn',this.value)">
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-row"><span class="ctrl-lbl">Max Size</span><span class="ctrl-val" id="v-mx">0.4</span></div>
+            <input type="range" id="r-mx" min="0.1" max="0.5" value="0.4" step="0.01" oninput="P('dotMax',+this.value,'v-mx',this.value)">
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-row"><span class="ctrl-lbl">Rotation</span><span class="ctrl-val" id="v-ro">0°</span></div>
+            <input type="range" id="r-ro" min="0" max="45" value="0" step="0.5" oninput="P('rotation',+this.value*Math.PI/180,'v-ro',this.value+'°')">
+          </div>
+        </div>
+      </div>
+
+      <!-- Image -->
+      <div class="sec open" id="s-img">
+        <div class="sec-hdr" onclick="toggleSec('s-img')">Image <span class="sec-arr">&#9662;</span></div>
+        <div class="sec-body">
+          <div class="ctrl">
+            <div class="ctrl-row"><span class="ctrl-lbl">Brightness</span><span class="ctrl-val" id="v-br">0.0</span></div>
+            <input type="range" id="r-br" min="-0.5" max="0.5" value="0" step="0.01" oninput="P('brightness',+this.value,'v-br',(+this.value>0?'+':'')+this.value)">
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-row"><span class="ctrl-lbl">Contrast</span><span class="ctrl-val" id="v-co">2.1</span></div>
+            <input type="range" id="r-co" min="0.1" max="3" value="2.1" step="0.05" oninput="P('contrast',+this.value,'v-co',this.value)">
+          </div>
+          <div class="tog-row"><span class="tog-lbl">Invert</span><div class="tog" id="t-inv" onclick="TB('invert','t-inv')"><div class="tog-thumb"></div></div></div>
+          <div class="tog-row"><span class="tog-lbl">Colorize (video colors)</span><div class="tog" id="t-col" onclick="TB('colorize','t-col')"><div class="tog-thumb"></div></div></div>
+        </div>
+      </div>
+
+      <!-- Animation -->
+      <div class="sec open" id="s-an">
+        <div class="sec-hdr" onclick="toggleSec('s-an')">Animation <span class="sec-arr">&#9662;</span></div>
+        <div class="sec-body">
+          <div class="ctrl">
+            <div class="ctrl-row"><span class="ctrl-lbl">Wave Amplitude</span><span class="ctrl-val" id="v-wa">0.3</span></div>
+            <input type="range" id="r-wa" min="0" max="2" value="0.3" step="0.01" oninput="P('waveAmp',+this.value,'v-wa',this.value)">
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-row"><span class="ctrl-lbl">Wave Frequency</span><span class="ctrl-val" id="v-wf">2</span></div>
+            <input type="range" id="r-wf" min="0.1" max="5" value="2" step="0.05" oninput="P('waveFreq',+this.value,'v-wf',this.value)">
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-row"><span class="ctrl-lbl">Wave Speed</span><span class="ctrl-val" id="v-ws">0.5</span></div>
+            <input type="range" id="r-ws" min="0" max="4" value="0.5" step="0.05" oninput="P('waveSpeed',+this.value,'v-ws',this.value)">
+          </div>
+          <div class="tog-row">
+            <span class="tog-lbl">Animate (no video source)</span>
+            <div class="tog on" id="t-anim" onclick="toggleAnim()"><div class="tog-thumb"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sparkles -->
+      <div class="sec open" id="s-sk">
+        <div class="sec-hdr" onclick="toggleSec('s-sk')">Sparkles <span class="sec-arr">&#9662;</span></div>
+        <div class="sec-body">
+          <div class="ctrl">
+            <div class="ctrl-row"><span class="ctrl-lbl">Count</span><span class="ctrl-val" id="v-skn">8</span></div>
+            <input type="range" id="r-skn" min="0" max="8" value="8" step="1" oninput="P('sparkleCount',+this.value,'v-skn',this.value)">
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-row"><span class="ctrl-lbl">Intensity</span><span class="ctrl-val" id="v-ski">0.55</span></div>
+            <input type="range" id="r-ski" min="0" max="1.5" value="0.55" step="0.05" oninput="P('sparkleStr',+this.value,'v-ski',this.value)">
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-row"><span class="ctrl-lbl">Speed</span><span class="ctrl-val" id="v-sks">1</span></div>
+            <input type="range" id="r-sks" min="0.2" max="3" value="1" step="0.1" oninput="P('sparkleSpd',+this.value,'v-sks',this.value)">
+          </div>
+        </div>
+      </div>
+
+      <!-- Shape -->
+      <div class="sec open" id="s-sh">
+        <div class="sec-hdr" onclick="toggleSec('s-sh')">Shape <span class="sec-arr">&#9662;</span></div>
+        <div class="sec-body">
+          <div class="shape-grid">
+            <button class="shape-btn active" data-shape="0" onclick="setShape(0,this)" title="Circle">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="4.5" fill="currentColor" opacity=".8"/></svg>
+            </button>
+            <button class="shape-btn" data-shape="1" onclick="setShape(1,this)" title="Diamond">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><polygon points="7,2.5 11.5,7 7,11.5 2.5,7" fill="currentColor" opacity=".8"/></svg>
+            </button>
+            <button class="shape-btn" data-shape="2" onclick="setShape(2,this)" title="Lines">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 4h12M1 7h12M1 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </button>
+            <button class="shape-btn" data-shape="3" onclick="setShape(3,this)" title="Cross">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2.5v9M2.5 7h9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+            </button>
+            <button class="shape-btn" data-shape="4" onclick="setShape(4,this)" title="Square">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2.5" y="2.5" width="9" height="9" fill="currentColor" opacity=".8" rx="1"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Colors -->
+      <div class="sec open" id="s-cl">
+        <div class="sec-hdr" onclick="toggleSec('s-cl')">Colors <span class="sec-arr">&#9662;</span></div>
+        <div class="sec-body">
+          <div class="color-row">
+            <div class="color-item">
+              <div class="color-lbl">Dot</div>
+              <div class="color-wrap">
+                <div class="color-prev" id="cp-dot" style="background:#ffffff"></div>
+                <input type="color" id="c-dot" value="#ffffff" oninput="updateColor('dot',this.value)">
+              </div>
+            </div>
+            <div class="color-item">
+              <div class="color-lbl">Background</div>
+              <div class="color-wrap">
+                <div class="color-prev" id="cp-bg" style="background:#050507"></div>
+                <input type="color" id="c-bg" value="#050507" oninput="updateColor('bg',this.value)">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Presets -->
+      <div class="sec open" id="s-pr">
+        <div class="sec-hdr" onclick="toggleSec('s-pr')">Presets <span class="sec-arr">&#9662;</span></div>
+        <div class="sec-body">
+          <div class="preset-grid">
+            <button class="preset-btn active" data-preset="antimetal" onclick="applyPreset('antimetal',this)">
+              <span>Antimetal</span>
+              <div class="preset-right"><span class="preset-key">1</span><div class="preset-dot" style="background:#ffffff"></div></div>
+            </button>
+            <button class="preset-btn" data-preset="newsprint" onclick="applyPreset('newsprint',this)">
+              <span>Newsprint</span>
+              <div class="preset-right"><span class="preset-key">2</span><div class="preset-dot" style="background:#c8a87a"></div></div>
+            </button>
+            <button class="preset-btn" data-preset="blueprint" onclick="applyPreset('blueprint',this)">
+              <span>Blueprint</span>
+              <div class="preset-right"><span class="preset-key">3</span><div class="preset-dot" style="background:#4499ff"></div></div>
+            </button>
+          </div>
+          <button class="rand-btn" id="btnRand2">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M1 3h2a3 3 0 013 3 3 3 0 003 3h2M8 1l3 2-3 2M8 7l3 2-3 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Randomize params
+          </button>
+        </div>
+      </div>
+
+      <!-- Export -->
+      <div class="sec open" id="s-ex">
+        <div class="sec-hdr" onclick="toggleSec('s-ex')">Export <span class="sec-arr">&#9662;</span></div>
+        <div class="sec-body">
+          <div class="export-grid">
+            <button class="export-btn" onclick="exportPng()">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <rect x="1.5" y="1.5" width="13" height="13" rx="2" stroke="currentColor" stroke-width="1.2"/>
+                <circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/>
+              </svg>
+              PNG Frame
+            </button>
+            <button class="export-btn" id="btnExRec" onclick="toggleRecord()">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="4" fill="currentColor" opacity=".3"/>
+                <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/>
+              </svg>
+              <span id="recBtnTxt">Live Record</span>
+              <span class="rec-dur" id="recDur">0:00</span>
+            </button>
+          </div>
+          <div style="font-size:10px;color:var(--mu);line-height:1.5;padding-top:2px">
+            <b style="color:var(--tx)">S</b> PNG &nbsp;·&nbsp; <b style="color:var(--tx)">Space</b> play/pause &nbsp;·&nbsp; <b style="color:var(--tx)">1–3</b> presets &nbsp;·&nbsp; <b style="color:var(--tx)">R</b> randomize
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- Canvas -->
+  <div class="canvas-area" id="canvasArea">
+    <canvas id="glcanvas"></canvas>
+    <video id="videoEl" playsinline muted loop crossorigin="anonymous"></video>
+    <input type="file" id="fileInput" accept="video/*,image/*">
+
+    <div class="demo-hint" id="demoHint">Demo mode — move mouse to interact</div>
+
+    <div class="rec-indicator" id="recIndicator">
+      <div class="rec-blink"></div>
+      REC <span id="recIndDur">0:00</span>
+    </div>
+
+    <div class="upload-overlay" id="uploadOverlay">
+      <div class="up-ring">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <path d="M4 20v3a2 2 0 002 2h16a2 2 0 002-2v-3M14 17V4M8 10l6-6 6 6" stroke="rgba(255,255,255,.45)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="up-title">Drop video or image</div>
+      <div class="up-sub">Convert any video or image into an animated halftone shader</div>
+      <div class="up-btns">
+        <button class="btn" onclick="document.getElementById('fileInput').click()">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 9v1a1 1 0 001 1h7a1 1 0 001-1V9M6 8V1.5M3.5 4L6 1.5 8.5 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Upload File
+        </button>
+        <button class="btn" onclick="startWebcam()">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6" cy="6" r="1.5" fill="currentColor"/></svg>
+          Webcam
+        </button>
+      </div>
+    </div>
+
+    <div class="pb-bar hidden" id="pbBar">
+      <button class="play-btn" id="playBtn" onclick="togglePlay()">
+        <svg id="playIco" width="8" height="10" viewBox="0 0 8 10" fill="white"><path d="M1 1l6 4-6 4V1z"/></svg>
+        <svg id="pauseIco" width="8" height="10" viewBox="0 0 8 10" fill="white" style="display:none"><rect x=".5" y="1" width="2.5" height="8" rx=".8"/><rect x="5" y="1" width="2.5" height="8" rx=".8"/></svg>
+      </button>
+      <input type="range" class="seek" id="seekBar" min="0" max="100" value="0" step="0.1" oninput="seekTo(+this.value)">
+      <span class="time-txt" id="timeTxt">0:00 / 0:00</span>
+    </div>
+
+    <div class="info-bar">
+      <div class="chip">FPS <span id="fpsTxt2">--</span></div>
+      <div class="chip">DOTS <span id="dotsTxt2">--</span></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ══════════════════════════════════════════
+   VERTEX SHADER
+══════════════════════════════════════════ */
+var VS = [
+  "attribute vec2 a_pos;",
+  "void main(){ gl_Position=vec4(a_pos,0.0,1.0); }"
+].join("\n");
+
+/* ══════════════════════════════════════════
+   FRAGMENT SHADER
+   Trail: elongated ink-diffusion via anisotropic ellipse + noise boundary
+══════════════════════════════════════════ */
+var FS = [
+  "precision highp float;",
+  "uniform sampler2D u_vid;",
+  "uniform vec2  u_res;",
+  "uniform vec2  u_vres;",
+  "uniform float u_time;",
+  "uniform float u_sp;",
+  "uniform float u_sc;",
+  "uniform float u_rot;",
+  "uniform float u_wamp;",
+  "uniform float u_wfreq;",
+  "uniform float u_wspeed;",
+  /* Sparkle highlights */
+  "uniform float u_skCount;",        // 0..8
+  "uniform float u_skStr;",          // luma boost
+  "uniform float u_skSpd;",          // time multiplier
+  "uniform vec3  u_dcol;",
+  "uniform vec3  u_bcol;",
+  "uniform float u_shape;",
+  "uniform float u_bright;",
+  "uniform float u_cont;",
+  "uniform float u_inv;",
+  "uniform float u_colorize;",
+  "uniform float u_dmin;",
+  "uniform float u_dmax;",
+  "uniform float u_hasVid;",
+  "uniform float u_srcMode;",  // 0=none, 1=image, 2=video
+
+  "mat2 rot2(float a){float c=cos(a),s=sin(a);return mat2(c,-s,s,c);}",
+
+  /* ── Noise (value noise, smooth) ── */
+  "float h2(vec2 p){",
+  "  vec3 p3=fract(vec3(p.xyx)*vec3(0.1031,0.1030,0.0973));",
+  "  p3+=dot(p3,p3.yzx+33.33);",
+  "  return fract((p3.x+p3.y)*p3.z);",
+  "}",
+  "float noise(vec2 p){",
+  "  vec2 i=floor(p),f=fract(p);",
+  "  f=f*f*(3.0-2.0*f);",
+  "  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);",
+  "}",
+
+  /* ── Random highlight particles: drifting twinkling sparkles ── */
+  "float sparkleField(vec2 p,float t){",
+  "  float s=0.0;",
+  "  for(int i=0;i<8;i++){",
+  "    float fi=float(i);",
+  "    float active=step(fi,u_skCount-0.5);",
+  /* each sparkle has a slot lifetime; floor(t/life)+slot picks a new random pos each cycle */
+  "    float life=2.6+h2(vec2(fi,7.3))*2.2;",
+  "    float slot=floor(t/life+fi*0.137);",
+  "    vec2  rh=vec2(h2(vec2(slot,fi*1.31)),h2(vec2(fi*2.7,slot+11.0)));",
+  "    vec2  sp=rh*u_res;",
+  "    float ph=fract(t/life+fi*0.137);",
+  /* fade in then out (smooth bell) */
+  "    float life01=sin(ph*3.14159);",
+  "    life01=life01*life01;",
+  /* radial decay; radius scales with screen size */
+  "    float rad=80.0+h2(vec2(fi,3.7))*120.0;",
+  "    float d=length(p-sp)/rad;",
+  "    s+=exp(-d*d*1.6)*life01*active;",
+  "  }",
+  "  return s;",
+  "}",
+
+  /* ── Antimetal 4-layer wave ── */
+  "float wave(vec2 p,float t){",
+  "  float f=u_wfreq*0.010;",
+  "  return (sin(p.x*f      +p.y*f*0.55+t*1.00)*0.5+0.5)*0.35",
+  "        +(sin(p.x*f*1.65 -p.y*f*0.40+t*1.42)*0.5+0.5)*0.28",
+  "        +(cos(p.x*f*0.60 +p.y*f*1.70+t*0.85)*0.5+0.5)*0.22",
+  "        +(sin(p.x*f*2.10 +p.y*f*0.90+t*0.55)*0.5+0.5)*0.15;",
+  "}",
+
+  /* ── SDF shapes ── */
+  "float sdCircle (vec2 p,float r){return length(p)-r;}",
+  "float sdDiamond(vec2 p,float r){return (abs(p.x)+abs(p.y))/1.414-r;}",
+  "float sdSquare (vec2 p,float r){vec2 d=abs(p)-vec2(r*0.9);return max(d.x,d.y);}",
+  "float sdCross  (vec2 p,float r){float a=r*0.4;return min(max(abs(p.x)-r,abs(p.y)-a),max(abs(p.y)-r,abs(p.x)-a));}",
+  "float sdLine   (vec2 p,float r){return abs(mod(p.y*2.0+1.0,2.0)-1.0)-r*1.6;}",
+
+  "void main(){",
+  "  vec2 fc=gl_FragCoord.xy;",
+
+  /* Rotated halftone grid */
+  "  mat2 R=rot2(u_rot),Ri=rot2(-u_rot);",
+  "  vec2 rfc=R*fc;",
+  "  vec2 cidx=floor(rfc/u_sp);",
+  "  vec2 local=rfc/u_sp-(cidx+0.5);",
+  "  vec2 cc=Ri*((cidx+0.5)*u_sp);",
+
+  /* AR-correct video UV */
+  "  vec2 np=vec2(cc.x/u_res.x,1.0-cc.y/u_res.y);",
+  "  float car=u_res.x/u_res.y, var2=u_vres.x/u_vres.y;",
+  "  vec2 vuv; float inBnd;",
+  "  if(var2>car){ float sh=car/var2,yo=(1.0-sh)*0.5; vuv=vec2(np.x,(np.y-yo)/sh); inBnd=step(0.0,vuv.y)*step(vuv.y,1.0); }",
+  "  else        { float sw=var2/car,xo=(1.0-sw)*0.5; vuv=vec2((np.x-xo)/sw,np.y); inBnd=step(0.0,vuv.x)*step(vuv.x,1.0); }",
+  "  vec4 vSamp=texture2D(u_vid,clamp(vuv,0.001,0.999));",
+  "  float hasAndIn=u_hasVid*inBnd;",
+
+  /* No source → render solid bg, skip all halftone */
+  "  if(u_srcMode<0.5){ gl_FragColor=vec4(u_bcol,1.0); return; }",
+  /* Image/video but pixel outside content rect → solid bg */
+  "  if(inBnd<0.5){ gl_FragColor=vec4(u_bcol,1.0); return; }",
+
+  /* Luma from video or image (+ sparkles inside content) */
+  "  float luma;",
+  "  if(u_srcMode>1.5){",
+  "    luma=dot(vSamp.rgb,vec3(0.299,0.587,0.114));",
+  "  } else {",
+  /* image mode: image luma + sparkle highlights, sparkles confined to image rect */
+  "    luma=dot(vSamp.rgb,vec3(0.299,0.587,0.114));",
+  "    float sp=sparkleField(cc,u_time*u_skSpd);",
+  "    luma=clamp(luma+sp*u_skStr,0.0,1.0);",
+  "  }",
+  "  luma=clamp((luma-0.5)*u_cont+0.5+u_bright,0.0,1.0);",
+  "  luma=mix(luma,1.0-luma,u_inv);",
+
+  /* Wave + center boost */
+  "  float w=wave(cc,u_time*u_wspeed);",
+  "  vec2 toCtr=cc-u_res*vec2(0.5,0.47);",
+  "  float cFac=max(0.0,1.0-length(toCtr)/(min(u_res.x,u_res.y)*0.72));",
+  "  cFac=cFac*cFac*(3.0-2.0*cFac);",
+
+  /* Final dot radius */
+  "  float baseR=mix(u_dmin,u_dmax,luma);",
+  "  float r=baseR+w*u_wamp*0.12*(0.5+cFac*0.5)+cFac*0.035;",
+  "  r=clamp(r*u_sc,0.004,0.49);",
+
+  /* Shape SDF */
+  "  float d;",
+  "  if(u_shape<0.5)      d=sdCircle (local,r);",
+  "  else if(u_shape<1.5) d=sdDiamond(local,r);",
+  "  else if(u_shape<2.5) d=sdLine   (local,r);",
+  "  else if(u_shape<3.5) d=sdCross  (local,r);",
+  "  else                 d=sdSquare (local,r);",
+
+  /* AA + colorize */
+  "  float mask=1.0-smoothstep(-0.016,0.016,d);",
+  "  vec3 dc=mix(u_dcol,vSamp.rgb,u_colorize*hasAndIn);",
+  "  dc+=vec3(0.015,0.0,0.035)*cFac*mask;",
+  "  gl_FragColor=vec4(mix(u_bcol,dc,mask),1.0);",
+  "}"
+].join("\n");
+
+/* ══════════════════════════════════════════
+   STATE
+══════════════════════════════════════════ */
+var canvas  = document.getElementById("glcanvas");
+var videoEl = document.getElementById("videoEl");
+var area    = document.getElementById("canvasArea");
+var gl, prog, quadBuf, UL = {};
+
+var srcType   = "none";
+var natW = 1, natH = 1;
+var animating = true;
+var rafT = 0, lastTs = 0, frameN = 0, fpsAcc = 0;
+
+var params = {
+  spacing:20, scale:0.7, rotation:0,
+  waveAmp:0.3, waveFreq:2.0, waveSpeed:0.5,
+  sparkleCount:8, sparkleStr:0.55, sparkleSpd:1.0,
+  dotColor:[1,1,1], bgColor:[0.020,0.020,0.027],
+  shape:0, brightness:0, contrast:2.1,
+  invert:0, colorize:0, dotMin:0.04, dotMax:0.4
+};
+
+/* ══════════════════════════════════════════
+   WEBGL INIT
+══════════════════════════════════════════ */
+function initGL(){
+  gl = canvas.getContext("webgl", { preserveDrawingBuffer:true, antialias:false });
+  if(!gl){ alert("WebGL not supported"); return; }
+
+  function mkShader(type, src){
+    var s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if(!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+      console.error("Shader error:", gl.getShaderInfoLog(s));
+    return s;
+  }
+
+  prog = gl.createProgram();
+  gl.attachShader(prog, mkShader(gl.VERTEX_SHADER,   VS));
+  gl.attachShader(prog, mkShader(gl.FRAGMENT_SHADER, FS));
+  gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog, gl.LINK_STATUS))
+    console.error("Link error:", gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+
+  quadBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
+  var loc = gl.getAttribLocation(prog, "a_pos");
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+  [
+    "u_vid","u_res","u_vres","u_time",
+    "u_sp","u_sc","u_rot","u_wamp","u_wfreq","u_wspeed",
+    "u_skCount","u_skStr","u_skSpd",
+    "u_dcol","u_bcol","u_shape","u_bright","u_cont",
+    "u_inv","u_colorize","u_dmin","u_dmax","u_hasVid","u_srcMode"
+  ].forEach(function(n){ UL[n] = gl.getUniformLocation(prog, n); });
+
+  var tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([0,0,0,255]));
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.uniform1i(UL["u_vid"], 0);
+}
+
+/* ══════════════════════════════════════════
+   RESIZE
+══════════════════════════════════════════ */
+function resize(){
+  var dpr = Math.min(window.devicePixelRatio||1, 2);
+  var w = area.clientWidth, h = area.clientHeight;
+  canvas.width  = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  canvas.style.width  = w + "px";
+  canvas.style.height = h + "px";
+  if(gl) gl.viewport(0,0,canvas.width,canvas.height);
+  updateDots();
+}
+
+function updateDots(){
+  var d = Math.ceil(canvas.width/params.spacing) * Math.ceil(canvas.height/params.spacing);
+  var t = d>1e6?(d/1e6).toFixed(1)+"M":d>1e3?Math.round(d/1e3)+"K":d;
+  document.getElementById("dotsTxt").textContent  = t;
+  document.getElementById("dotsTxt2").textContent = t;
+}
+
+/* ══════════════════════════════════════════
+   RENDER LOOP
+══════════════════════════════════════════ */
+function render(ts){
+  requestAnimationFrame(render);
+
+  if(lastTs > 0){
+    var dt = ts - lastTs;
+    fpsAcc = fpsAcc * 0.88 + (1000/dt) * 0.12;
+    if(frameN % 18 === 0){
+      var f = fpsAcc.toFixed(0);
+      document.getElementById("fpsTxt").textContent  = f;
+      document.getElementById("fpsTxt2").textContent = f;
+    }
+  }
+  lastTs = ts; frameN++;
+  if(animating) rafT += 0.006;
+
+  if((srcType==="video"||srcType==="webcam") && videoEl.readyState >= 2){
+    gl.bindTexture(gl.TEXTURE_2D, gl.getParameter(gl.TEXTURE_BINDING_2D));
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,videoEl);
+    if(srcType==="video") updateSeek();
+  }
+
+  var W = canvas.width, H = canvas.height;
+
+  gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+
+  gl.uniform2f(UL["u_res"],   W, H);
+  gl.uniform2f(UL["u_vres"],  natW, natH);
+  gl.uniform1f(UL["u_time"],  rafT);
+  gl.uniform1f(UL["u_sp"],    params.spacing);
+  gl.uniform1f(UL["u_sc"],    params.scale);
+  gl.uniform1f(UL["u_rot"],   params.rotation);
+  gl.uniform1f(UL["u_wamp"],  params.waveAmp);
+  gl.uniform1f(UL["u_wfreq"], params.waveFreq);
+  gl.uniform1f(UL["u_wspeed"],params.waveSpeed);
+
+  gl.uniform1f(UL["u_skCount"], params.sparkleCount);
+  gl.uniform1f(UL["u_skStr"],   params.sparkleStr);
+  gl.uniform1f(UL["u_skSpd"],   params.sparkleSpd);
+
+  gl.uniform3fv(UL["u_dcol"],    params.dotColor);
+  gl.uniform3fv(UL["u_bcol"],    params.bgColor);
+  gl.uniform1f(UL["u_shape"],    params.shape);
+  gl.uniform1f(UL["u_bright"],   params.brightness);
+  gl.uniform1f(UL["u_cont"],     params.contrast);
+  gl.uniform1f(UL["u_inv"],      params.invert);
+  gl.uniform1f(UL["u_colorize"], params.colorize);
+  gl.uniform1f(UL["u_dmin"],     params.dotMin);
+  gl.uniform1f(UL["u_dmax"],     params.dotMax);
+  gl.uniform1f(UL["u_hasVid"],   srcType!=="none" ? 1.0 : 0.0);
+  /* 0=none, 1=image, 2=video/webcam */
+  var sm = srcType==="image" ? 1.0 : (srcType==="video"||srcType==="webcam") ? 2.0 : 0.0;
+  gl.uniform1f(UL["u_srcMode"], sm);
+
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+/* ══════════════════════════════════════════
+   VIDEO / WEBCAM / IMAGE
+══════════════════════════════════════════ */
+function setStatus(cls, txt){
+  document.getElementById("vDot").className = "v-dot"+(cls?" "+cls:"");
+  document.getElementById("vTxt").textContent = txt;
+}
+
+function loadMedia(file){
+  var url = URL.createObjectURL(file);
+  if(file.type.startsWith("image/")){
+    var img = new Image();
+    img.onload = function(){
+      natW = img.naturalWidth; natH = img.naturalHeight;
+      gl.bindTexture(gl.TEXTURE_2D, gl.getParameter(gl.TEXTURE_BINDING_2D));
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
+      srcType = "image";
+      setStatus("loaded", file.name+" ("+natW+"×"+natH+")");
+      hide("uploadOverlay"); hide("demoHint"); hide("pbBar");
+      document.getElementById("btnExportVideo").disabled = true;
+    };
+    img.src = url;
+  } else {
+    videoEl.onloadedmetadata = function(){
+      natW = videoEl.videoWidth  || 1;
+      natH = videoEl.videoHeight || 1;
+      setStatus("loaded", file.name+" ("+natW+"×"+natH+")");
+      var btn = document.getElementById("btnExportVideo");
+      btn.disabled = false;
+      btn.title    = "Export full video with halftone effect";
+    };
+    videoEl.src = url; videoEl.load(); videoEl.play();
+    srcType = "video";
+    hide("uploadOverlay"); hide("demoHint");
+    show("pbBar");
+    document.getElementById("playIco").style.display  = "none";
+    document.getElementById("pauseIco").style.display = "block";
+  }
+}
+
+window.startWebcam = function(){
+  navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:1280,height:720}})
+    .then(function(stream){
+      videoEl.onloadedmetadata = function(){ natW=videoEl.videoWidth||1280; natH=videoEl.videoHeight||720; };
+      videoEl.srcObject = stream; videoEl.play();
+      srcType = "webcam";
+      setStatus("live","Webcam live");
+      hide("uploadOverlay"); hide("demoHint"); hide("pbBar");
+      document.getElementById("btnCam").classList.add("active");
+      document.getElementById("btnUpload").classList.remove("active");
+    })
+    .catch(function(e){ alert("Webcam: "+e.message); });
+};
+
+function hide(id){ document.getElementById(id).classList.add("hidden"); }
+function show(id){ document.getElementById(id).classList.remove("hidden"); }
+
+/* ══════════════════════════════════════════
+   PLAYBACK
+══════════════════════════════════════════ */
+window.togglePlay = function(){
+  if(videoEl.paused){
+    videoEl.play();
+    document.getElementById("playIco").style.display  = "none";
+    document.getElementById("pauseIco").style.display = "block";
+  } else {
+    videoEl.pause();
+    document.getElementById("playIco").style.display  = "block";
+    document.getElementById("pauseIco").style.display = "none";
+  }
+};
+window.seekTo = function(pct){ if(videoEl.duration) videoEl.currentTime = videoEl.duration*pct/100; };
+
+function updateSeek(){
+  if(!videoEl.duration) return;
+  document.getElementById("seekBar").value = (videoEl.currentTime/videoEl.duration)*100;
+  document.getElementById("timeTxt").textContent = fmt(videoEl.currentTime)+" / "+fmt(videoEl.duration);
+}
+function fmt(s){ var m=Math.floor(s/60),sec=Math.floor(s%60); return m+":"+(sec<10?"0":"")+sec; }
+
+/* ══════════════════════════════════════════
+   CONTROLS
+══════════════════════════════════════════ */
+window.P = function(key, val, lblId, disp){
+  params[key] = val;
+  document.getElementById(lblId).textContent = disp;
+  if(key==="spacing") updateDots();
+};
+
+window.TB = function(key, tid){
+  params[key] = params[key] > 0.5 ? 0 : 1;
+  document.getElementById(tid).classList.toggle("on", params[key] > 0.5);
+};
+
+window.toggleAnim = function(){
+  animating = !animating;
+  document.getElementById("t-anim").classList.toggle("on", animating);
+};
+
+window.setShape = function(shape, btn){
+  params.shape = shape;
+  document.querySelectorAll(".shape-btn").forEach(function(b){ b.classList.remove("active"); });
+  btn.classList.add("active");
+};
+
+function hex3(h){
+  var n=parseInt(h.slice(1),16);
+  return [(n>>16&255)/255,(n>>8&255)/255,(n&255)/255];
+}
+window.updateColor = function(which, hex){
+  if(which==="dot"){ params.dotColor=hex3(hex); document.getElementById("cp-dot").style.background=hex; }
+  else             { params.bgColor =hex3(hex); document.getElementById("cp-bg").style.background =hex; }
+};
+window.toggleSec = function(id){ document.getElementById(id).classList.toggle("open"); };
+
+/* ══════════════════════════════════════════
+   PRESETS  (Antimetal, Newsprint, Blueprint)
+══════════════════════════════════════════ */
+var PRESETS = {
+  antimetal:{sp:20,sc:0.70,ro:0, mn:0.04,mx:0.40,wa:0.30,wf:2.0,ws:0.50,tr:160,ts:1.0,dot:"#ffffff",bg:"#050507",br:0,   co:2.1,inv:0,col:0,sh:0},
+  newsprint:{sp:13,sc:0.90,ro:15,mn:0.02,mx:0.48,wa:0.20,wf:0.6,ws:0.30,tr:180,ts:0.8,dot:"#1a1009",bg:"#f0e8d0",br:0.05,co:1.3,inv:0,col:0,sh:0},
+  blueprint:{sp:20,sc:0.70,ro:45,mn:0.04,mx:0.40,wa:0.30,wf:2.0,ws:0.50,tr:160,ts:1.0,dot:"#4499ff",bg:"#010810",br:0,   co:1.1,inv:0,col:0,sh:4}
+};
+
+function syncSlider(id, val, lblId, disp){
+  var el = document.getElementById(id);
+  if(el){ el.value = val; document.getElementById(lblId).textContent = disp; }
+}
+
+window.applyPreset = function(name, btn){
+  var p = PRESETS[name]; if(!p) return;
+  params.spacing=p.sp; params.scale=p.sc; params.rotation=p.ro*Math.PI/180;
+  params.waveAmp=p.wa; params.waveFreq=p.wf; params.waveSpeed=p.ws;
+  params.brightness=p.br; params.contrast=p.co;
+  params.invert=p.inv; params.colorize=p.col; params.shape=p.sh;
+  params.dotMin=p.mn; params.dotMax=p.mx;
+  window.updateColor("dot", p.dot);
+  window.updateColor("bg",  p.bg);
+
+  syncSlider("r-sp",p.sp,"v-sp",p.sp);
+  syncSlider("r-sc",p.sc,"v-sc",p.sc);
+  syncSlider("r-ro",p.ro,"v-ro",p.ro+"°");
+  syncSlider("r-wa",p.wa,"v-wa",p.wa);
+  syncSlider("r-wf",p.wf,"v-wf",p.wf);
+  syncSlider("r-ws",p.ws,"v-ws",p.ws);
+  syncSlider("r-mn",p.mn,"v-mn",p.mn);
+  syncSlider("r-mx",p.mx,"v-mx",p.mx);
+  syncSlider("r-br",p.br,"v-br",(p.br>0?"+":"")+p.br);
+  syncSlider("r-co",p.co,"v-co",p.co);
+
+  document.getElementById("t-inv").classList.toggle("on", p.inv>0.5);
+  document.getElementById("t-col").classList.toggle("on", p.col>0.5);
+  document.querySelectorAll(".shape-btn").forEach(function(b){ b.classList.toggle("active",+b.dataset.shape===p.sh); });
+  document.querySelectorAll(".preset-btn").forEach(function(b){ b.classList.toggle("active",b.dataset.preset===name); });
+  updateDots();
+};
+
+/* ══════════════════════════════════════════
+   RANDOMIZE
+══════════════════════════════════════════ */
+function rnd(a,b){ return a+Math.random()*(b-a); }
+function randomize(){
+  var sp=Math.round(rnd(10,36)), sc=+rnd(0.5,1.1).toFixed(2);
+  var ro=Math.round(rnd(0,45)), mn=+rnd(0.01,0.12).toFixed(2), mx=+rnd(0.28,0.49).toFixed(2);
+  var wa=+rnd(0.1,1.5).toFixed(2), wf=+rnd(0.3,3.5).toFixed(2), ws=+rnd(0.1,2.0).toFixed(2);
+  var sh=Math.floor(rnd(0,4.99));
+  var hue=Math.round(rnd(0,360));
+  function hslHex(h,s,l){ var c=document.createElement("canvas"),ctx=c.getContext("2d"); ctx.fillStyle="hsl("+h+","+s+"%,"+l+"%)"; return ctx.fillStyle; }
+  var dh=hslHex(hue,80,90), bh=hslHex((hue+180)%360,50,4);
+  params.spacing=sp; params.scale=sc; params.rotation=ro*Math.PI/180;
+  params.waveAmp=wa; params.waveFreq=wf; params.waveSpeed=ws;
+  params.shape=sh; params.dotMin=mn; params.dotMax=mx;
+  window.updateColor("dot",dh); window.updateColor("bg",bh);
+  syncSlider("r-sp",sp,"v-sp",sp); syncSlider("r-sc",sc,"v-sc",sc);
+  syncSlider("r-ro",ro,"v-ro",ro+"°"); syncSlider("r-wa",wa,"v-wa",wa);
+  syncSlider("r-wf",wf,"v-wf",wf); syncSlider("r-ws",ws,"v-ws",ws);
+  syncSlider("r-mn",mn,"v-mn",mn); syncSlider("r-mx",mx,"v-mx",mx);
+  document.querySelectorAll(".shape-btn").forEach(function(b){ b.classList.toggle("active",+b.dataset.shape===sh); });
+  document.querySelectorAll(".preset-btn").forEach(function(b){ b.classList.remove("active"); });
+  updateDots();
+}
+
+/* ══════════════════════════════════════════
+   EXPORT PNG
+══════════════════════════════════════════ */
+window.exportPng = function(){
+  var a = document.createElement("a");
+  a.href = canvas.toDataURL("image/png");
+  a.download = "halftone-"+Date.now()+".png";
+  a.click();
+};
+document.getElementById("btnShot").addEventListener("click", window.exportPng);
+
+/* ══════════════════════════════════════════
+   EXPORT VIDEO — auto-records full video start→end, then downloads
+══════════════════════════════════════════ */
+var videoExporting = false, exRec = null, exTimer = null, exEndedHandler = null, exFallbackTO = null;
+
+function _cleanupExport(){
+  videoExporting = false;
+  clearInterval(exTimer); exTimer = null;
+  clearTimeout(exFallbackTO); exFallbackTO = null;
+  if(exEndedHandler){ videoEl.removeEventListener("ended", exEndedHandler); exEndedHandler = null; }
+  videoEl.loop = true;
+  var btn = document.getElementById("btnExportVideo");
+  var txt = document.getElementById("exportVideoTxt");
+  btn.classList.remove("exporting");
+  txt.textContent = "Export Video";
+  btn.title = "Export full video with halftone effect";
+  document.getElementById("recIndicator").classList.remove("show");
+}
+
+document.getElementById("btnExportVideo").addEventListener("click", function(){
+  if(srcType !== "video"){
+    alert("Please upload a video first (webcam streams cannot be exported as a finite clip).");
+    return;
+  }
+  if(typeof MediaRecorder === "undefined"){
+    alert("Your browser does not support MediaRecorder. Try Chrome or Edge.");
+    return;
+  }
+  if(!canvas.captureStream){
+    alert("Your browser does not support canvas.captureStream().");
+    return;
+  }
+
+  var btn = document.getElementById("btnExportVideo");
+  var txt = document.getElementById("exportVideoTxt");
+
+  /* Cancel if already running */
+  if(videoExporting){
+    if(exRec && exRec.state === "recording"){
+      exRec.stop(); // onstop will handle cleanup + download of partial
+    } else {
+      _cleanupExport();
+    }
+    return;
+  }
+
+  /* Pick a supported MIME (Safari has very limited webm support) */
+  var candidates = [
+    "video/webm;codecs=vp9",
+    "video/webm;codecs=vp8",
+    "video/webm",
+    "video/mp4;codecs=h264",
+    "video/mp4"
+  ];
+  var mimeType = "";
+  for(var i=0;i<candidates.length;i++){
+    if(MediaRecorder.isTypeSupported(candidates[i])){ mimeType = candidates[i]; break; }
+  }
+  if(!mimeType){
+    alert("No supported video MIME type for MediaRecorder in this browser.");
+    return;
+  }
+  var ext = mimeType.indexOf("mp4") !== -1 ? "mp4" : "webm";
+
+  var stream;
+  try { stream = canvas.captureStream(30); }
+  catch(e){ alert("captureStream failed: "+e.message); return; }
+
+  var chunks = [];
+  try { exRec = new MediaRecorder(stream, { mimeType: mimeType, videoBitsPerSecond: 8000000 }); }
+  catch(e){ alert("MediaRecorder error: "+e.message); return; }
+
+  exRec.ondataavailable = function(e){ if(e.data && e.data.size) chunks.push(e.data); };
+  exRec.onerror = function(e){ console.error("MediaRecorder error", e); alert("Recording error – see console."); _cleanupExport(); };
+  exRec.onstop = function(){
+    _cleanupExport();
+    if(!chunks.length){ alert("No frames were captured. Make sure the video is playing."); return; }
+
+    var blob = new Blob(chunks, { type: mimeType });
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement("a");
+    a.href = url;
+    a.download = "halftone-"+Date.now()+"."+ext;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+
+    // Resume normal playback
+    videoEl.play().catch(function(){});
+    document.getElementById("playIco").style.display  = "none";
+    document.getElementById("pauseIco").style.display = "block";
+  };
+
+  /* Prepare video: disable loop so 'ended' fires, seek to start */
+  videoEl.loop = false;
+  videoEl.playbackRate = 1;
+
+  var startRecording = function(){
+    try { exRec.start(100); } // timeslice => regular ondataavailable
+    catch(e){ alert("Could not start recording: "+e.message); _cleanupExport(); return; }
+
+    videoExporting = true;
+    btn.classList.add("exporting");
+    txt.textContent = "Stop Export";
+    btn.title = "Click to cancel export";
+    document.getElementById("recIndicator").classList.add("show");
+    document.getElementById("recIndDur").textContent = "0:00";
+
+    var exStart = Date.now();
+    exTimer = setInterval(function(){
+      document.getElementById("recIndDur").textContent = fmt(Math.floor((Date.now()-exStart)/1000));
+    }, 500);
+
+    exEndedHandler = function(){
+      if(exRec && exRec.state === "recording") exRec.stop();
+    };
+    videoEl.addEventListener("ended", exEndedHandler);
+
+    /* Fallback: in some browsers 'ended' may not fire reliably.
+       Stop after duration + 1s buffer. */
+    var dur = isFinite(videoEl.duration) ? videoEl.duration : 0;
+    if(dur > 0){
+      exFallbackTO = setTimeout(function(){
+        if(exRec && exRec.state === "recording") exRec.stop();
+      }, (dur + 1) * 1000);
+    }
+  };
+
+  /* Seek to 0, wait for it, then play, then record */
+  var onSeeked = function(){
+    videoEl.removeEventListener("seeked", onSeeked);
+    var pp = videoEl.play();
+    if(pp && pp.then){
+      pp.then(startRecording).catch(function(err){
+        alert("Could not play video for export: "+err.message);
+        _cleanupExport();
+      });
+    } else {
+      startRecording();
+    }
+  };
+  videoEl.addEventListener("seeked", onSeeked, { once:true });
+  try { videoEl.currentTime = 0; }
+  catch(e){
+    videoEl.removeEventListener("seeked", onSeeked);
+    alert("Could not seek video to start: "+e.message);
+    _cleanupExport();
+  }
+});
+
+/* ══════════════════════════════════════════
+   LIVE RECORD (manual start/stop)
+══════════════════════════════════════════ */
+var liveRec = null, liveChunks = [], liveTimer = null;
+
+window.toggleRecord = function(){
+  if(liveRec && liveRec.state === "recording"){
+    liveRec.stop(); clearInterval(liveTimer);
+    document.getElementById("btnExRec").classList.remove("recording");
+    document.getElementById("recBtnTxt").textContent = "Live Record";
+    document.getElementById("recDur").classList.remove("show");
+    document.getElementById("recIndicator").classList.remove("show");
+    return;
+  }
+  try {
+    var mt = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")?"video/webm;codecs=vp9":"video/webm";
+    liveChunks = [];
+    liveRec = new MediaRecorder(canvas.captureStream(30), { mimeType:mt });
+    liveRec.ondataavailable = function(e){ if(e.data.size) liveChunks.push(e.data); };
+    liveRec.onstop = function(){
+      var blob = new Blob(liveChunks,{type:"video/webm"});
+      var url  = URL.createObjectURL(blob);
+      var a    = document.createElement("a"); a.href=url; a.download="halftone-live-"+Date.now()+".webm"; a.click();
+    };
+    liveRec.start();
+    var t0 = Date.now();
+    document.getElementById("btnExRec").classList.add("recording");
+    document.getElementById("recBtnTxt").textContent = "Stop Record";
+    document.getElementById("recDur").classList.add("show");
+    document.getElementById("recIndicator").classList.add("show");
+    liveTimer = setInterval(function(){
+      document.getElementById("recDur").textContent = fmt(Math.floor((Date.now()-t0)/1000));
+      document.getElementById("recIndDur").textContent = fmt(Math.floor((Date.now()-t0)/1000));
+    }, 500);
+  } catch(e){ alert("Record error: "+e.message); }
+};
+
+/* ══════════════════════════════════════════
+   FULLSCREEN
+══════════════════════════════════════════ */
+document.getElementById("btnFS").addEventListener("click", function(){
+  if(!document.fullscreenElement) document.documentElement.requestFullscreen();
+  else document.exitFullscreen();
+});
+
+/* ══════════════════════════════════════════
+   DRAG & DROP
+══════════════════════════════════════════ */
+var overlay = document.getElementById("uploadOverlay");
+overlay.addEventListener("dragover",  function(e){ e.preventDefault(); overlay.classList.add("drag-over"); });
+overlay.addEventListener("dragleave", function(){  overlay.classList.remove("drag-over"); });
+overlay.addEventListener("drop", function(e){
+  e.preventDefault(); overlay.classList.remove("drag-over");
+  if(e.dataTransfer.files[0]) loadMedia(e.dataTransfer.files[0]);
+});
+area.addEventListener("dragover", function(e){ e.preventDefault(); show("uploadOverlay"); overlay.classList.add("drag-over"); });
+area.addEventListener("drop", function(e){
+  e.preventDefault(); overlay.classList.remove("drag-over");
+  if(e.dataTransfer.files[0]) loadMedia(e.dataTransfer.files[0]);
+});
+document.getElementById("fileInput").addEventListener("change", function(e){
+  if(e.target.files[0]) loadMedia(e.target.files[0]);
+});
+
+/* ══════════════════════════════════════════
+   KEYBOARD
+══════════════════════════════════════════ */
+document.addEventListener("keydown", function(e){
+  if(e.target.tagName==="INPUT") return;
+  if(e.key===" "){ e.preventDefault(); srcType==="video" ? window.togglePlay() : window.toggleAnim(); }
+  if(e.key==="s"||e.key==="S") window.exportPng();
+  if(e.key==="r"||e.key==="R") randomize();
+  var names = ["antimetal","newsprint","blueprint"];
+  var idx   = parseInt(e.key) - 1;
+  if(idx >= 0 && idx < names.length)
+    window.applyPreset(names[idx], document.querySelector('[data-preset="'+names[idx]+'"]'));
+});
+
+document.getElementById("btnRand").addEventListener("click", randomize);
+document.getElementById("btnRand2").addEventListener("click", randomize);
+
+/* ══════════════════════════════════════════
+   BOOT
+══════════════════════════════════════════ */
+window.addEventListener("resize", resize);
+resize();
+initGL();
+requestAnimationFrame(render);
+
+})();
+</script>
+</body>
+</html>
